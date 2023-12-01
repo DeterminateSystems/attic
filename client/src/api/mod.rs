@@ -55,9 +55,9 @@ pub enum ApiError {
 #[derive(Debug, Clone, Deserialize)]
 pub struct StructuredApiError {
     #[allow(dead_code)]
-    code: u16,
-    error: String,
-    message: String,
+    pub code: u16,
+    pub error: String,
+    pub message: String,
 }
 
 impl ApiClient {

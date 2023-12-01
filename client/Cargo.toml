@@ -8,6 +8,10 @@ publish = false
 name = "attic"
 path = "src/main.rs"
 
+[lib]
+name = "attic_client"
+path = "src/lib.rs"
+
 [dependencies]
 attic = { path = "../attic" }
 
