@@ -101,6 +101,8 @@ pub struct Pusher {
 pub struct PushSession {
     /// Sender to the batching future.
     sender: channel::Sender<Vec<StorePath>>,
+
+    worker: JoinHandle<HashMap<StorePath, Result<()>>>,
 }
 
 enum SessionQueuePoll {
@@ -259,29 +261,24 @@ impl PushSession {
         let known_paths_mutex = Arc::new(Mutex::new(HashSet::new()));
 
         // FIXME
-        spawn(async move {
-            let pusher = Arc::new(pusher);
+        let worker = spawn(async move {
             loop {
-                if let Err(e) = Self::worker(
-                    pusher.clone(),
-                    config,
-                    known_paths_mutex.clone(),
-                    receiver.clone(),
-                )
-                .await
+                if let Err(e) =
+                    Self::worker(&pusher, config, known_paths_mutex.clone(), receiver.clone()).await
                 {
                     eprintln!("Worker exited: {:?}", e);
                 } else {
                     break;
                 }
             }
+            pusher.wait().await
         });
 
-        Self { sender }
+        Self { sender, worker }
     }
 
     async fn worker(
-        pusher: Arc<Pusher>,
+        pusher: &Pusher,
         config: PushSessionConfig,
         known_paths_mutex: Arc<Mutex<HashSet<StorePathHash>>>,
         receiver: channel::Receiver<Vec<StorePath>>,
@@ -362,6 +359,12 @@ impl PushSession {
         self.sender
             .send_blocking(store_paths)
             .map_err(|e| anyhow!(e))
+    }
+
+    /// Waits for all workers to terminate.
+    pub async fn wait(self) -> HashMap<StorePath, Result<()>> {
+        drop(self.sender);
+        self.worker.await.unwrap()
     }
 }
 
