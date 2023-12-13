@@ -362,9 +362,9 @@ impl PushSession {
     }
 
     /// Waits for all workers to terminate.
-    pub async fn wait(self) -> HashMap<StorePath, Result<()>> {
+    pub async fn wait(self) -> Result<HashMap<StorePath, Result<()>>> {
         drop(self.sender);
-        self.worker.await.unwrap()
+        self.worker.await.map_err(|e| anyhow!(e))
     }
 }
 

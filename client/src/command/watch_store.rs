@@ -122,7 +122,7 @@ pub async fn run(opts: Opts) -> Result<()> {
     }
 
     // This is currently never reached.
-    session.wait().await;
+    session.wait().await?;
 
     Ok(())
 }
