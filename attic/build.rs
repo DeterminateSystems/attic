@@ -9,12 +9,9 @@ fn main() {
 
 #[cfg(feature = "nix_store")]
 fn build_bridge() {
-    // Temporary workaround for issue in <https://github.com/NixOS/nix/pull/8484>
-    let hacky_include = {
-        let dir = tempfile::tempdir().expect("Failed to create temporary directory for workaround");
-        std::fs::write(dir.path().join("uds-remote-store.md"), "\"\"").unwrap();
-        dir
-    };
+    let nix_include_dir = &pkg_config::probe_library("nix-store")
+        .unwrap()
+        .include_paths[0];
 
     cxx_build::bridge("src/nix_store/bindings/mod.rs")
         .file("src/nix_store/bindings/nix.cpp")
@@ -22,8 +19,8 @@ fn build_bridge() {
         .flag("-O2")
         .flag("-include")
         .flag("nix/config.h")
-        .flag("-idirafter")
-        .flag(hacky_include.path().to_str().unwrap())
+        .flag("-I")
+        .flag(&nix_include_dir.to_string_lossy())
         .compile("nixbinding");
 
     println!("cargo:rerun-if-changed=src/nix_store/bindings");
