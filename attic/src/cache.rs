@@ -69,10 +69,23 @@ pub struct CacheNamePattern {
 }
 
 impl CacheName {
+    /// # Safety
+    ///
+    /// The caller must guarantee that the name is valid.
+    #[allow(unsafe_code)]
+    pub unsafe fn new_unchecked(name: String) -> Self {
+        Self(name)
+    }
+
     /// Creates a cache name from a String.
     pub fn new(name: String) -> AtticResult<Self> {
         validate_cache_name(&name, false)?;
-        Ok(Self(name))
+
+        // SAFETY: We validated it just above.
+        #[allow(unsafe_code)]
+        unsafe {
+            Ok(Self::new_unchecked(name))
+        }
     }
 
     /// Returns the string.
