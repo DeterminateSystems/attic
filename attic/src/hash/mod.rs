@@ -89,7 +89,7 @@ impl Hash {
     }
 
     /// Returns the hash in Nix-specific Base32 format.
-    fn to_base32(&self) -> String {
+    pub fn to_base32(&self) -> String {
         nix_base32::to_nix_base32(self.data())
     }
 }
