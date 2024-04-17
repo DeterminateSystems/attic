@@ -28,7 +28,7 @@ use bytes::Bytes;
 use futures::future::join_all;
 use futures::stream::{Stream, TryStreamExt};
 use indicatif::{HumanBytes, MultiProgress, ProgressBar, ProgressState, ProgressStyle};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 use tokio::task::{spawn, JoinHandle};
 use tokio::time;
 
@@ -68,7 +68,7 @@ pub struct PushSessionConfig {
 /// checking for paths that already exist on the remote
 /// cache.
 pub struct Pusher {
-    api: ApiClient,
+    api: Arc<RwLock<ApiClient>>,
     store: Arc<NixStore>,
     cache: CacheName,
     cache_config: CacheConfig,
@@ -135,7 +135,7 @@ struct NarStreamProgress<S> {
 impl Pusher {
     pub fn new(
         store: Arc<NixStore>,
-        api: ApiClient,
+        api: Arc<RwLock<ApiClient>>,
         cache: CacheName,
         cache_config: CacheConfig,
         mp: MultiProgress,
@@ -219,7 +219,7 @@ impl Pusher {
     async fn worker(
         receiver: JobReceiver,
         store: Arc<NixStore>,
-        api: ApiClient,
+        api: Arc<RwLock<ApiClient>>,
         cache: CacheName,
         mp: MultiProgress,
         config: PushConfig,
@@ -372,7 +372,7 @@ impl PushPlan {
     /// Creates a plan.
     async fn plan(
         store: Arc<NixStore>,
-        api: &ApiClient,
+        api: &Arc<RwLock<ApiClient>>,
         cache: &CacheName,
         cache_config: &CacheConfig,
         roots: Vec<StorePath>,
@@ -448,7 +448,11 @@ impl PushPlan {
         // Query missing paths
         let missing_path_hashes: HashSet<StorePathHash> = {
             let store_path_hashes = store_path_map.keys().map(|sph| sph.to_owned()).collect();
-            let res = api.get_missing_paths(cache, store_path_hashes).await?;
+            let res = api
+                .read()
+                .await
+                .get_missing_paths(cache, store_path_hashes)
+                .await?;
             res.missing_paths.into_iter().collect()
         };
         store_path_map.retain(|sph, _| missing_path_hashes.contains(sph));
@@ -467,7 +471,7 @@ impl PushPlan {
 pub async fn upload_path(
     path_info: ValidPathInfo,
     store: Arc<NixStore>,
-    api: ApiClient,
+    api: Arc<RwLock<ApiClient>>,
     cache: &CacheName,
     mp: MultiProgress,
     force_preamble: bool,
@@ -533,6 +537,8 @@ pub async fn upload_path(
 
     let start = Instant::now();
     match api
+        .read()
+        .await
         .upload_path(upload_info, nar_stream, force_preamble)
         .await
     {
