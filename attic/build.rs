@@ -20,7 +20,7 @@ fn build_bridge() {
         .flag("-include")
         .flag("nix/config.h")
         .flag("-I")
-        .flag(&nix_include_dir.to_string_lossy())
+        .flag(&*nix_include_dir.to_string_lossy())
         .compile("nixbinding");
 
     println!("cargo:rerun-if-changed=src/nix_store/bindings");
