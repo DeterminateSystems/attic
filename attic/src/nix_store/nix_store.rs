@@ -150,6 +150,7 @@ impl NixStore {
     /// This is the multi-path variant of `compute_fs_closure`.
     /// If `flip_directions` is true, the set of paths that can reach `store_path` is
     /// returned.
+    #[tracing::instrument(skip(self))]
     pub async fn compute_fs_closure_multi(
         &self,
         store_paths: Vec<StorePath>,
@@ -192,6 +193,7 @@ impl NixStore {
     }
 
     /// Returns detailed information on a path.
+    #[tracing::instrument(skip(self))]
     pub async fn query_path_info(&self, store_path: StorePath) -> AtticResult<ValidPathInfo> {
         let inner = self.inner.clone();
 
