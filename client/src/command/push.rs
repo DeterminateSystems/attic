@@ -4,6 +4,7 @@ use std::sync::Arc;
 use anyhow::{anyhow, Result};
 use clap::Parser;
 use indicatif::MultiProgress;
+use tokio::sync::RwLock;
 
 use crate::api::ApiClient;
 use crate::cache::CacheRef;
@@ -76,6 +77,7 @@ pub async fn run(opts: Opts) -> Result<()> {
 
     let mp = MultiProgress::new();
 
+    let api = Arc::new(RwLock::new(api));
     let pusher = Pusher::new(store, api, cache.to_owned(), cache_config, mp, push_config);
     let plan = pusher
         .plan(roots, sub.no_closure, sub.ignore_upstream_cache_filter)
