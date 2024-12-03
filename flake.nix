@@ -111,6 +111,7 @@
         inputsFrom = with packages; [ attic book ];
         nativeBuildInputs = with pkgs; [
           rustc
+          rust-analyzer
 
           rustfmt clippy
           cargo-expand cargo-outdated cargo-edit
