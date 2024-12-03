@@ -1,7 +1,7 @@
 use std::error::Error as StdError;
 use std::fmt;
 
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 use bytes::Bytes;
 use const_format::concatcp;
 use displaydoc::Display;
@@ -146,6 +146,7 @@ impl ApiClient {
     }
 
     /// Returns paths missing from a cache.
+    #[tracing::instrument(skip(self))]
     pub async fn get_missing_paths(
         &self,
         cache: &CacheName,
@@ -157,12 +158,29 @@ impl ApiClient {
             store_path_hashes,
         };
 
-        let res = self.client.post(endpoint).json(&payload).send().await?;
+        let res = self
+            .client
+            .post(endpoint)
+            .json(&payload)
+            .send()
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed to send request for missing paths from cache {cache}",
+                    cache = cache.to_string(),
+                )
+            })?;
 
         if res.status().is_success() {
             let cache_config = res.json().await?;
             Ok(cache_config)
         } else {
+            tracing::error!(
+                "{err}",
+                err = res
+                    .error_for_status_ref()
+                    .expect_err("expected error when status is not success")
+            );
             let api_error = ApiError::try_from_response(res).await?;
             Err(api_error.into())
         }

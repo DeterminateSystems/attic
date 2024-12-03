@@ -22,7 +22,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context as _, Result};
 use async_channel as channel;
 use bytes::Bytes;
 use futures::future::join_all;
@@ -189,6 +189,7 @@ impl Pusher {
     }
 
     /// Creates a push plan.
+    #[tracing::instrument(skip_all)]
     pub async fn plan(
         &self,
         roots: Vec<StorePath>,
@@ -266,7 +267,7 @@ impl PushSession {
                 if let Err(e) =
                     Self::worker(&pusher, config, known_paths_mutex.clone(), receiver.clone()).await
                 {
-                    eprintln!("Worker exited: {:?}", e);
+                    tracing::warn!(?e, "Worker errored");
                 } else {
                     break;
                 }
@@ -334,7 +335,8 @@ impl PushSession {
                     config.no_closure,
                     config.ignore_upstream_cache_filter,
                 )
-                .await?;
+                .await
+                .context("Failed to create push plan")?;
 
             let mut known_paths = known_paths_mutex.lock().await;
             plan.store_path_map
@@ -342,7 +344,12 @@ impl PushSession {
 
             // Push everything
             for (store_path_hash, path_info) in plan.store_path_map.into_iter() {
-                pusher.queue(path_info).await?;
+                pusher.queue(path_info).await.with_context(|| {
+                    format!(
+                        "Failed to queue store path with hash {store_path_hash}",
+                        store_path_hash = store_path_hash.as_str()
+                    )
+                })?;
                 known_paths.insert(store_path_hash);
             }
 
@@ -370,6 +377,7 @@ impl PushSession {
 
 impl PushPlan {
     /// Creates a plan.
+    #[tracing::instrument(skip(store, api, cache_config))]
     async fn plan(
         store: Arc<NixStore>,
         api: &Arc<RwLock<ApiClient>>,
@@ -385,7 +393,8 @@ impl PushPlan {
         } else {
             store
                 .compute_fs_closure_multi(roots, false, false, false)
-                .await?
+                .await
+                .context("Failed to compute FS closure")?
         };
 
         let mut store_path_map: HashMap<StorePathHash, ValidPathInfo> = {
@@ -397,7 +406,10 @@ impl PushPlan {
                     let path_hash = path.to_hash();
 
                     async move {
-                        let path_info = store.query_path_info(path).await?;
+                        let path_info = store
+                            .query_path_info(path)
+                            .await
+                            .context("Failed to use store to query path info")?;
                         Ok((path_hash, path_info))
                     }
                 })
@@ -452,7 +464,8 @@ impl PushPlan {
                 .read()
                 .await
                 .get_missing_paths(cache, store_path_hashes)
-                .await?;
+                .await
+                .context("Failed to query missing paths from API")?;
             res.missing_paths.into_iter().collect()
         };
         store_path_map.retain(|sph, _| missing_path_hashes.contains(sph));
