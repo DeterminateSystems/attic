@@ -14,8 +14,6 @@
 
 , nix
 , boost
-, darwin
-, libiconv
 }:
 
 let
@@ -35,9 +33,6 @@ let
 
   buildInputs = [
     nix boost
-  ] ++ lib.optionals stdenv.isDarwin [
-    darwin.apple_sdk.frameworks.SystemConfiguration
-    libiconv
   ];
 
   # For whatever reason, these don’t seem to get set
