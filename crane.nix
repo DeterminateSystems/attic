@@ -7,6 +7,7 @@
 
 { stdenv
 , lib
+, buildPackages
 , craneLib
 , rustPlatform
 , runCommand
@@ -43,9 +44,25 @@ let
     libiconv
   ];
 
+  # For whatever reason, these don’t seem to get set
+  # automatically when using crane.
+  #
+  # Possibly related: <https://github.com/NixOS/nixpkgs/pull/369424>
+  env = {
+    "CC_${stdenv.buildPlatform.rust.cargoEnvVarTarget}" = lib.getExe' buildPackages.stdenv.cc "${buildPackages.stdenv.cc.targetPrefix}cc";
+    "CXX_${stdenv.buildPlatform.rust.cargoEnvVarTarget}" = lib.getExe' buildPackages.stdenv.cc "${buildPackages.stdenv.cc.targetPrefix}c++";
+    "CARGO_TARGET_${stdenv.buildPlatform.rust.cargoEnvVarTarget}_LINKER" = lib.getExe' buildPackages.stdenv.cc "${buildPackages.stdenv.cc.targetPrefix}cc";
+
+    "CC_${stdenv.hostPlatform.rust.cargoEnvVarTarget}" = lib.getExe' stdenv.cc "${stdenv.cc.targetPrefix}cc";
+    "CXX_${stdenv.hostPlatform.rust.cargoEnvVarTarget}" = lib.getExe' stdenv.cc "${stdenv.cc.targetPrefix}c++";
+    "CARGO_TARGET_${stdenv.hostPlatform.rust.cargoEnvVarTarget}_LINKER" = lib.getExe' stdenv.cc "${stdenv.cc.targetPrefix}cc";
+
+    CARGO_BUILD_TARGET = stdenv.hostPlatform.rust.rustcTarget;
+  };
+
   cargoArtifacts = craneLib.buildDepsOnly {
     pname = "attic";
-    inherit src version nativeBuildInputs buildInputs;
+    inherit src version nativeBuildInputs buildInputs env;
 
     # By default it's "use-symlink", which causes Crane's `inheritCargoArtifactsHook`
     # to copy the artifacts using `cp --no-preserve=mode` which breaks the executable
@@ -58,7 +75,7 @@ let
 
   mkAttic = args: craneLib.buildPackage ({
     pname = "attic";
-    inherit src version nativeBuildInputs buildInputs cargoArtifacts;
+    inherit src version nativeBuildInputs buildInputs cargoArtifacts env;
 
     ATTIC_DISTRIBUTOR = "attic";
 
