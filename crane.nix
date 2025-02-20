@@ -12,7 +12,7 @@
 , installShellFiles
 , jq
 
-, nix
+, nixVersions
 , boost
 }:
 
@@ -32,7 +32,8 @@ let
   ];
 
   buildInputs = [
-    nix boost
+    nixVersions.nix_2_26
+    boost
   ];
 
   # For whatever reason, these don’t seem to get set
@@ -69,9 +70,6 @@ let
     inherit src version nativeBuildInputs buildInputs cargoArtifacts env;
 
     ATTIC_DISTRIBUTOR = "attic";
-
-    # See comment in `attic/build.rs`
-    NIX_INCLUDE_PATH = "${lib.getDev nix}/include";
 
     # See comment in `attic-tests`
     doCheck = false;
@@ -146,9 +144,6 @@ let
     buildPhaseCargoCommand = "";
     checkPhaseCargoCommand = "cargoWithProfile test --no-run --message-format=json >cargo-test.json";
     doInstallCargoArtifacts = false;
-
-    # See comment in `attic/build.rs`
-    NIX_INCLUDE_PATH = "${lib.getDev nix}/include";
 
     installPhase = ''
       runHook preInstall
