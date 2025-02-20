@@ -13,14 +13,14 @@
 #include <memory>
 #include <mutex>
 #include <set>
-#include <nix/store-api.hh>
-#include <nix/local-store.hh>
-#include <nix/remote-store.hh>
-#include <nix/uds-remote-store.hh>
-#include <nix/hash.hh>
-#include <nix/path.hh>
-#include <nix/serialise.hh>
-#include <nix/shared.hh>
+#include <store-api.hh>
+#include <local-store.hh>
+#include <remote-store.hh>
+#include <uds-remote-store.hh>
+#include <hash.hh>
+#include <path.hh>
+#include <serialise.hh>
+#include <shared.hh>
 #include <rust/cxx.h>
 
 template<class T> using RVec = rust::Vec<T>;
