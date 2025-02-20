@@ -42,8 +42,6 @@
 
       inherit (cranePkgs) attic attic-client attic-server;
 
-      attic-nixpkgs = pkgs.callPackage ./package.nix { };
-
       attic-static = cranePkgsStatic.attic;
       attic-client-static = cranePkgsStatic.attic-client;
       attic-server-static = cranePkgsStatic.attic-server;
