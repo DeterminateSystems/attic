@@ -51,6 +51,9 @@ pub struct UploadPathNarInfo {
     /// The CA field of this object.
     pub ca: Option<String>,
 
+    /// The provenance field of this object.
+    pub provenance: Option<serde_json::Value>,
+
     /// The hash of the NAR.
     ///
     /// It must begin with `sha256:` with the SHA-256 hash in the

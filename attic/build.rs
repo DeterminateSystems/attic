@@ -11,15 +11,14 @@ fn main() {
 fn build_bridge() {
     let deps = system_deps::Config::new().probe().unwrap();
 
-    println!("cargo:rerun-if-changed=src/nix_store/bindings");
-
-    cxx_build::bridge("src/nix_store/bindings/mod.rs")
+    let mut build = cxx_build::bridge("src/nix_store/bindings/mod.rs");
+    build
         .file("src/nix_store/bindings/nix.cpp")
-        .std("c++2a")
-        .includes(deps.all_include_paths())
-        .flag("-include")
-        .flag("config-store.hh")
-        .flag("-include")
-        .flag("config-main.hh")
-        .compile("nixbinding");
+        .flag("-std=c++23")
+        .flag("-O2")
+        .includes(deps.all_include_paths());
+
+    build.compile("nixbinding");
+
+    println!("cargo:rerun-if-changed=src/nix_store/bindings");
 }

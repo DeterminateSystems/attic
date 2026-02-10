@@ -24,6 +24,7 @@ sha2 = "0.10.6"
 tempfile = "3"
 wildmatch = "2.1.1"
 xdg = "2.5.0"
+serde_json = "1.0.96"
 
 # Native libnixstore bindings.
 cxx = { version = "1.0", optional = true }
@@ -40,16 +41,18 @@ features = [
 ]
 
 [dev-dependencies]
-serde_json = "1.0.96"
 tokio-test = "0.4.2"
 
 [build-dependencies]
 cxx-build = { version = "1.0", optional = true }
-system-deps = { version = "7.0", optional = true }
+system-deps = { version = "7.0.7", git = "https://github.com/DeterminateSystems/system-deps", branch = "support-link_files", optional = true }
+# system-deps = { version = "7.0.7", optional = true }
 
 [package.metadata.system-deps]
-nix-store = { version = "2.26", feature = "nix_store" }
-nix-main = { version = "2.26", feature = "nix_store" }
+nix-util = { version = "2.33.1", feature = "nix_store" }
+nix-expr = { version = "2.33.1", feature = "nix_store" }
+nix-store = { version = "2.33.1", feature = "nix_store" }
+nix-main = { version = "2.33.1", feature = "nix_store" }
 
 [features]
 default = [ "nix_store", "tokio" ]
@@ -57,9 +60,9 @@ default = [ "nix_store", "tokio" ]
 # Native libnixstore bindings.
 #
 # When disabled, the native Rust portions of nix_store can still be used.
-nix_store = [ "dep:cxx", "dep:cxx-build", "dep:system-deps", "tokio/rt" ]
+nix_store = ["tokio", "tokio/fs", "tokio/process", "dep:cxx", "dep:cxx-build", "dep:system-deps"]
 
 # Tokio.
 #
 # When disabled, any part depending on tokio is unavailable.
-tokio = [ "dep:tokio", "dep:async-stream" ]
+tokio = ["dep:tokio", "tokio/rt", "tokio/time", "dep:async-stream"]

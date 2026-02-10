@@ -50,6 +50,7 @@ use std::ffi::OsStr;
 #[cfg(target_family = "unix")]
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -94,38 +95,6 @@ lazy_static! {
     };
 }
 
-/// A path in a Nix store.
-///
-/// This must be a direct child of the store. This path may or
-/// may not actually exist.
-///
-/// This guarantees that the base name is of valid format.
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct StorePath {
-    /// Base name of the store path.
-    ///
-    /// For example, for `/nix/store/ia70ss13m22znbl8khrf2hq72qmh5drr-ruby-2.7.5`,
-    /// this would be `ia70ss13m22znbl8khrf2hq72qmh5drr-ruby-2.7.5`.
-    base_name: PathBuf,
-}
-
-/// A fixed-length store path hash.
-///
-/// For example, for `/nix/store/ia70ss13m22znbl8khrf2hq72qmh5drr-ruby-2.7.5`,
-/// this would be `ia70ss13m22znbl8khrf2hq72qmh5drr`.
-///
-/// It must contain exactly 32 "base-32 characters". Nix's special scheme
-/// include the following valid characters: "0123456789abcdfghijklmnpqrsvwxyz"
-/// ('e', 'o', 'u', 't' are banned).
-///
-/// Examples of invalid store path hashes:
-///
-/// - "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
-/// - "IA70SS13M22ZNBL8KHRF2HQ72QMH5DRR"
-/// - "whatevenisthisthing"
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize)]
-pub struct StorePathHash(String);
-
 /// Information on a valid store path.
 #[derive(Debug)]
 pub struct ValidPathInfo {
@@ -148,12 +117,64 @@ pub struct ValidPathInfo {
 
     /// Content Address.
     pub ca: Option<String>,
+
+    /// Provenance.
+    pub provenance: Option<serde_json::Value>,
+}
+
+/// A path in a Nix store.
+///
+/// This must be a direct child of the store. This path may or
+/// may not actually exist.
+///
+/// This guarantees that the base name is of valid format.
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct StorePath {
+    /// Base name of the store path.
+    ///
+    /// For example, for `/nix/store/ia70ss13m22znbl8khrf2hq72qmh5drr-ruby-2.7.5`,
+    /// this would be `ia70ss13m22znbl8khrf2hq72qmh5drr-ruby-2.7.5`.
+    base_name: PathBuf,
+}
+
+impl FromStr for StorePath {
+    type Err = AtticError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::from_base_name(PathBuf::from(s))
+    }
+}
+
+impl std::fmt::Display for StorePath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.base_name.display().fmt(f)
+    }
+}
+
+impl Serialize for StorePath {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.to_string().as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for StorePath {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        String::deserialize(deserializer).and_then(|base_name_str| {
+            StorePath::from_str(&base_name_str).map_err(|e| de::Error::custom(e.to_string()))
+        })
+    }
 }
 
 #[cfg_attr(not(feature = "nix_store"), allow(dead_code))]
 impl StorePath {
     /// Creates a StorePath with a base name.
-    fn from_base_name(base_name: PathBuf) -> AtticResult<Self> {
+    pub fn from_base_name(base_name: PathBuf) -> AtticResult<Self> {
         let s = base_name
             .as_os_str()
             .to_str()
@@ -219,6 +240,41 @@ impl StorePath {
     }
 }
 
+/// A fixed-length store path hash.
+///
+/// For example, for `/nix/store/ia70ss13m22znbl8khrf2hq72qmh5drr-ruby-2.7.5`,
+/// this would be `ia70ss13m22znbl8khrf2hq72qmh5drr`.
+///
+/// It must contain exactly 32 "base-32 characters". Nix's special scheme
+/// include the following valid characters: "0123456789abcdfghijklmnpqrsvwxyz"
+/// ('e', 'o', 'u', 't' are banned).
+///
+/// Examples of invalid store path hashes:
+///
+/// - "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+/// - "IA70SS13M22ZNBL8KHRF2HQ72QMH5DRR"
+/// - "whatevenisthisthing"
+#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+pub struct StorePathHash(String);
+
+impl<'de> Deserialize<'de> for StorePathHash {
+    /// Deserializes a potentially-invalid store path hash.
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        use de::Error;
+        String::deserialize(deserializer)
+            .and_then(|s| Self::new(s).map_err(|e| Error::custom(e.to_string())))
+    }
+}
+
+impl std::fmt::Display for StorePathHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 impl StorePathHash {
     /// Creates a store path hash from a string.
     pub fn new(hash: String) -> AtticResult<Self> {
@@ -255,18 +311,6 @@ impl StorePathHash {
 
     pub fn to_string(&self) -> String {
         self.0.clone()
-    }
-}
-
-impl<'de> Deserialize<'de> for StorePathHash {
-    /// Deserializes a potentially-invalid store path hash.
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: de::Deserializer<'de>,
-    {
-        use de::Error;
-        String::deserialize(deserializer)
-            .and_then(|s| Self::new(s).map_err(|e| Error::custom(e.to_string())))
     }
 }
 

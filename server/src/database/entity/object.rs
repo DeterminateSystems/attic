@@ -57,6 +57,9 @@ pub struct Model {
     /// simply treat it as a untrusted string.
     pub ca: Option<String>,
 
+    /// The provenance of this object.
+    pub provenance: Option<serde_json::Value>,
+
     /// Timestamp when the object is created.
     pub created_at: ChronoDateTimeUtc,
 
@@ -109,6 +112,11 @@ impl Model {
             deriver: self.deriver.to_owned(),
             signature: None,
             ca: self.ca.to_owned(),
+            provenance: self
+                .provenance
+                .as_ref()
+                .map(|p| serde_json::to_string(p).map_err(ServerError::database_error))
+                .transpose()?,
         })
     }
 }

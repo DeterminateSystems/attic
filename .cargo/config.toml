@@ -1,0 +1,6 @@
+[build]
+rustflags = [
+  "--cfg", "tokio_unstable",
+  "-Clink-arg=-fuse-ld=lld",
+]
+rustdocflags = ["--cfg", "tokio_unstable"]

@@ -150,7 +150,6 @@ impl NixStore {
     /// This is the multi-path variant of `compute_fs_closure`.
     /// If `flip_directions` is true, the set of paths that can reach `store_path` is
     /// returned.
-    #[tracing::instrument(skip(self))]
     pub async fn compute_fs_closure_multi(
         &self,
         store_paths: Vec<StorePath>,
@@ -193,7 +192,6 @@ impl NixStore {
     }
 
     /// Returns detailed information on a path.
-    #[tracing::instrument(skip(self))]
     pub async fn query_path_info(&self, store_path: StorePath) -> AtticResult<ValidPathInfo> {
         let inner = self.inner.clone();
 
@@ -224,14 +222,26 @@ impl NixStore {
                 })
                 .collect();
             let ca = c_path_info.pin_mut().ca();
+            let provenance = c_path_info.pin_mut().provenance();
 
             Ok(ValidPathInfo {
-                path: store_path,
+                path: store_path.clone(),
                 nar_size,
                 nar_hash: Hash::Sha256(nar_sha256_hash),
                 references,
                 sigs,
                 ca: if ca.is_empty() { None } else { Some(ca) },
+                provenance: if provenance.is_empty() {
+                    None
+                } else {
+                    Some(serde_json::from_str(&provenance).map_err(|e| {
+                        crate::AtticError::InvalidProvenance {
+                            path: store_path.clone(),
+                            error_display: e.to_string(),
+                            invalid_string: provenance,
+                        }
+                    })?)
+                },
             })
         })
         .await
