@@ -146,6 +146,11 @@ pub struct NarInfo {
     #[serde(rename = "CA")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ca: Option<String>,
+
+    /// The provenance of the object.
+    #[serde(rename = "Provenance")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<String>,
 }
 
 /// NAR compression type.

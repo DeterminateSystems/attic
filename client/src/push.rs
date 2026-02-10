@@ -518,6 +518,7 @@ pub async fn upload_path(
             ca: path_info.ca,
             nar_hash: path_info.nar_hash.to_owned(),
             nar_size: path_info.nar_size as usize,
+            provenance: path_info.provenance,
         }
     };
 

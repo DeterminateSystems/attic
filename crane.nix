@@ -1,25 +1,34 @@
-# For distribution from this repository as well as CI, we use Crane to build
-# Attic.
-
 { stdenv
 , lib
 , buildPackages
 , craneLib
-, rustPlatform
+, rust
 , runCommand
-, writeReferencesToFile
+, writeClosure
 , pkg-config
 , installShellFiles
 , jq
+, lld
 
-, nixVersions
+, nix-packages
 , boost
+, libarchive
+
+, extraPackageArgs ? {}
 }:
 
 let
   version = "0.1.0";
 
-  ignoredPaths = [ ".github" "target" "book" "nixos" "integration-tests" ];
+  ignoredPaths = [
+    ".ci"
+    ".github"
+    "book"
+    "flake"
+    "integration-tests"
+    "nixos"
+    "target"
+  ];
 
   src = lib.cleanSourceWith {
     filter = name: type: !(type == "directory" && builtins.elem (baseNameOf name) ignoredPaths);
@@ -32,29 +41,36 @@ let
   ];
 
   buildInputs = [
-    nixVersions.nix_2_26
+    nix-packages.nix-util-static
+    nix-packages.nix-store-static
+    nix-packages.nix-main-static
+    nix-packages.nix-expr-static
     boost
   ];
 
-  # For whatever reason, these don’t seem to get set
-  # automatically when using crane.
-  #
-  # Possibly related: <https://github.com/NixOS/nixpkgs/pull/369424>
-  env = {
-    "CC_${stdenv.buildPlatform.rust.cargoEnvVarTarget}" = lib.getExe' buildPackages.stdenv.cc "${buildPackages.stdenv.cc.targetPrefix}cc";
-    "CXX_${stdenv.buildPlatform.rust.cargoEnvVarTarget}" = lib.getExe' buildPackages.stdenv.cc "${buildPackages.stdenv.cc.targetPrefix}c++";
-    "CARGO_TARGET_${stdenv.buildPlatform.rust.cargoEnvVarTarget}_LINKER" = lib.getExe' buildPackages.stdenv.cc "${buildPackages.stdenv.cc.targetPrefix}cc";
+  rustTargetSpec = stdenv.hostPlatform.rust.rustcTargetSpec;
+  rustTargetSpecEnv = lib.toUpper (builtins.replaceStrings [ "-" ] [ "_" ] rustTargetSpec);
 
-    "CC_${stdenv.hostPlatform.rust.cargoEnvVarTarget}" = lib.getExe' stdenv.cc "${stdenv.cc.targetPrefix}cc";
-    "CXX_${stdenv.hostPlatform.rust.cargoEnvVarTarget}" = lib.getExe' stdenv.cc "${stdenv.cc.targetPrefix}c++";
-    "CARGO_TARGET_${stdenv.hostPlatform.rust.cargoEnvVarTarget}_LINKER" = lib.getExe' stdenv.cc "${stdenv.cc.targetPrefix}cc";
+  isCross = stdenv.hostPlatform != stdenv.buildPlatform;
 
-    CARGO_BUILD_TARGET = stdenv.hostPlatform.rust.rustcTarget;
+  crossArgs = lib.optionalAttrs (isCross) {
+    doIncludeCrossToolchainEnv = false;
+    depsBuildBuild = [
+      buildPackages.stdenv.cc
+      lld
+    ];
+
+    CARGO_BUILD_TARGET = rustTargetSpec;
+    "CARGO_TARGET_${rustTargetSpecEnv}_LINKER" = "${stdenv.cc.targetPrefix}cc";
+    RUSTFLAGS = "-C relocation-model=static -Clink-arg=-fuse-ld=lld";
+    SYSTEM_DEPS_LINK = "static";
   };
 
-  cargoArtifacts = craneLib.buildDepsOnly {
+  extraArgs = crossArgs // extraPackageArgs;
+
+  cargoArtifacts = craneLib.buildDepsOnly ({
     pname = "attic";
-    inherit src version nativeBuildInputs buildInputs env;
+    inherit src version nativeBuildInputs buildInputs;
 
     # By default it's "use-symlink", which causes Crane's `inheritCargoArtifactsHook`
     # to copy the artifacts using `cp --no-preserve=mode` which breaks the executable
@@ -63,18 +79,22 @@ let
     # With `use-zstd`, the cargo artifacts are archived in a `tar.zstd`. This is
     # actually set if you use `buildPackage` without passing `cargoArtifacts`.
     installCargoArtifactsMode = "use-zstd";
-  };
+  } // extraArgs);
 
-  mkAttic = args: craneLib.buildPackage ({
+  mkAttic = {
+    packages,
+  }: let
+    cargoPackageArgs = map (p: "-p ${p}") packages;
+  in craneLib.buildPackage ({
     pname = "attic";
-    inherit src version nativeBuildInputs buildInputs cargoArtifacts env;
+    inherit src version nativeBuildInputs buildInputs cargoArtifacts;
 
     ATTIC_DISTRIBUTOR = "attic";
 
     # See comment in `attic-tests`
     doCheck = false;
 
-    cargoExtraArgs = "-p attic-client -p attic-server";
+    cargoExtraArgs = lib.concatStringsSep " " cargoPackageArgs;
 
     postInstall = lib.optionalString (stdenv.hostPlatform == stdenv.buildPlatform) ''
       if [[ -f $out/bin/attic ]]; then
@@ -85,22 +105,15 @@ let
       fi
     '';
 
-    meta = with lib; {
-      description = "Multi-tenant Nix binary cache system";
-      homepage = "https://github.com/zhaofengli/attic";
-      license = licenses.asl20;
-      maintainers = with maintainers; [ zhaofengli ];
-      platforms = platforms.linux ++ platforms.darwin;
-    };
-  } // args);
+  } // extraArgs);
 
   attic = mkAttic {
-    cargoExtraArgs = "-p attic-client -p attic-server";
+    packages = ["attic-client" "attic-server"];
   };
 
   # Client-only package.
   attic-client = mkAttic {
-    cargoExtraArgs = " -p attic-client";
+    packages = ["attic-client"];
   };
 
   # Server-only package with fat LTO enabled.
@@ -112,7 +125,7 @@ let
   #
   # We don't enable fat LTO in the default `attic` package since it
   # dramatically increases build time.
-  attic-server = craneLib.buildPackage {
+  attic-server = craneLib.buildPackage ({
     pname = "attic-server";
 
     # We don't pull in the common cargoArtifacts because the feature flags
@@ -126,13 +139,17 @@ let
 
     CARGO_PROFILE_RELEASE_LTO = "fat";
     CARGO_PROFILE_RELEASE_CODEGEN_UNITS = "1";
-  };
+
+    meta = {
+      mainProgram = "atticd";
+    };
+  } // extraArgs);
 
   # Attic interacts with Nix directly and its tests require trusted-user access
   # to nix-daemon to import NARs, which is not possible in the build sandbox.
   # In the CI pipeline, we build the test executable inside the sandbox, then
   # run it outside.
-  attic-tests = craneLib.mkCargoDerivation {
+  attic-tests = craneLib.mkCargoDerivation ({
     pname = "attic-tests";
 
     inherit src version buildInputs cargoArtifacts;
@@ -150,11 +167,11 @@ let
 
       mkdir -p $out/bin
       jq -r 'select(.reason == "compiler-artifact" and .target.test and .executable) | .executable' <cargo-test.json | \
-        xargs -I _ cp _ $out/bin
+        xargs -I {} cp {} $out/bin
 
       runHook postInstall
     '';
-  };
+  } // extraArgs);
 in {
   inherit cargoArtifacts attic attic-client attic-server attic-tests;
 }

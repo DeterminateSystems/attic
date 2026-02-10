@@ -6,6 +6,8 @@ use std::path::PathBuf;
 
 use displaydoc::Display;
 
+use crate::nix_store::StorePath;
+
 pub type AtticResult<T> = Result<T, AtticError>;
 
 /// An error.
@@ -37,6 +39,13 @@ pub enum AtticError {
 
     /// Unknown C++ exception: {exception}.
     CxxError { exception: String },
+
+    /// Provenance for {path:?} was not valid JSON: {error_display}: {invalid_string}
+    InvalidProvenance {
+        path: StorePath,
+        error_display: String,
+        invalid_string: String,
+    },
 }
 
 impl AtticError {
@@ -50,6 +59,7 @@ impl AtticError {
             Self::HashError(_) => "HashError",
             Self::IoError { .. } => "IoError",
             Self::CxxError { .. } => "CxxError",
+            Self::InvalidProvenance { .. } => "InvalidProvenance",
         }
     }
 }

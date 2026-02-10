@@ -8,18 +8,23 @@
 
     crane.url = "github:ipetkov/crane";
 
+    nix.url = "github:DeterminateSystems/nix-src";
+
     flake-compat = {
       url = "github:edolstra/flake-compat";
       flake = false;
     };
   };
 
-  outputs = { self, nixpkgs, nixpkgs-stable, flake-utils, crane, ... }: let
+  outputs = { self, nixpkgs, nixpkgs-stable, flake-utils, crane, ... }@inputs: let
     supportedSystems = flake-utils.lib.defaultSystems ++ [ "riscv64-linux" ];
 
     makeCranePkgs = pkgs: let
       craneLib = crane.mkLib pkgs;
-    in pkgs.callPackage ./crane.nix { inherit craneLib; };
+    in pkgs.callPackage ./crane.nix {
+      inherit craneLib;
+      nix-packages = inputs.nix.packages.${pkgs.stdenv.system};
+    };
   in flake-utils.lib.eachSystem supportedSystems (system: let
     pkgs = import nixpkgs {
       inherit system;

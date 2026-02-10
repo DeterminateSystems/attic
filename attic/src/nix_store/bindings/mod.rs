@@ -250,5 +250,8 @@ mod ffi {
 
         /// Returns the CA field of the store path.
         fn ca(self: Pin<&mut CPathInfo>) -> String;
+
+        /// Returns the provenance field of the store path.
+        fn provenance(self: Pin<&mut CPathInfo>) -> String;
     }
 }

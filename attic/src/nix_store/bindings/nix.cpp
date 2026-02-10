@@ -79,12 +79,20 @@ RString CPathInfo::ca() {
 	}
 }
 
+RString CPathInfo::provenance() {
+	if (this->pi->provenance) {
+		return RString(this->pi->provenance->to_json_str());
+	} else {
+		return RString("");
+	}
+}
+
 // =========
 // CNixStore
 // =========
 
 CNixStore::CNixStore() {
-	std::map<std::string, std::string> params;
+	nix::StoreReference::Params params;
 	std::lock_guard<std::mutex> lock(g_init_nix_mutex);
 
 	if (!g_init_nix_done) {
