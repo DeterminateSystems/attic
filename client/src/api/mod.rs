@@ -1,7 +1,9 @@
 use std::error::Error as StdError;
 use std::fmt;
+use std::sync::Arc;
 
 use anyhow::{Context as _, Result};
+use arc_swap::ArcSwap;
 use bytes::Bytes;
 use const_format::concatcp;
 use displaydoc::Display;
@@ -10,9 +12,10 @@ use futures::{
     stream::{self, StreamExt, TryStream, TryStreamExt},
 };
 use reqwest::{
-    header::{HeaderMap, HeaderValue, AUTHORIZATION, USER_AGENT},
+    header::{HeaderValue, AUTHORIZATION, USER_AGENT},
     Body, Client as HttpClient, Response, StatusCode, Url,
 };
+use reqwest::{Method, RequestBuilder};
 use serde::Deserialize;
 
 use crate::config::ServerConfig;
@@ -40,6 +43,8 @@ pub struct ApiClient {
 
     /// An initialized HTTP client.
     client: HttpClient,
+
+    token: Arc<ArcSwap<HeaderValue>>,
 }
 
 /// An API error.
@@ -62,11 +67,16 @@ pub struct StructuredApiError {
 
 impl ApiClient {
     pub fn from_server_config(config: ServerConfig) -> Result<Self> {
-        let client = build_http_client(config.token()?.as_deref());
+        let token = Arc::new(ArcSwap::from_pointee(make_bearer(
+            &config
+                .token()?
+                .expect("we always construct the client with a token"),
+        )?));
 
         Ok(Self {
             endpoint: Url::parse(&config.endpoint)?,
-            client,
+            client: reqwest::Client::new(),
+            token,
         })
     }
 
@@ -76,6 +86,17 @@ impl ApiClient {
         Ok(())
     }
 
+    pub fn set_token(&self, token: &str) -> Result<()> {
+        self.token.store(Arc::new(make_bearer(token)?));
+        Ok(())
+    }
+
+    fn request(&self, method: Method, url: Url) -> RequestBuilder {
+        self.client
+            .request(method, url)
+            .header(AUTHORIZATION, HeaderValue::clone(&self.token.load()))
+    }
+
     /// Returns the configuration of a cache.
     pub async fn get_cache_config(&self, cache: &CacheName) -> Result<CacheConfig> {
         let endpoint = self
@@ -83,7 +104,7 @@ impl ApiClient {
             .join("_api/v1/cache-config/")?
             .join(cache.as_str())?;
 
-        let res = self.client.get(endpoint).send().await?;
+        let res = self.request(Method::GET, endpoint).send().await?;
 
         if res.status().is_success() {
             let cache_config = res.json().await?;
@@ -101,7 +122,11 @@ impl ApiClient {
             .join("_api/v1/cache-config/")?
             .join(cache.as_str())?;
 
-        let res = self.client.post(endpoint).json(&request).send().await?;
+        let res = self
+            .request(Method::POST, endpoint)
+            .json(&request)
+            .send()
+            .await?;
 
         if res.status().is_success() {
             Ok(())
@@ -118,7 +143,11 @@ impl ApiClient {
             .join("_api/v1/cache-config/")?
             .join(cache.as_str())?;
 
-        let res = self.client.patch(endpoint).json(&config).send().await?;
+        let res = self
+            .request(Method::PATCH, endpoint)
+            .json(&config)
+            .send()
+            .await?;
 
         if res.status().is_success() {
             Ok(())
@@ -135,7 +164,7 @@ impl ApiClient {
             .join("_api/v1/cache-config/")?
             .join(cache.as_str())?;
 
-        let res = self.client.delete(endpoint).send().await?;
+        let res = self.request(Method::DELETE, endpoint).send().await?;
 
         if res.status().is_success() {
             Ok(())
@@ -159,8 +188,7 @@ impl ApiClient {
         };
 
         let res = self
-            .client
-            .post(endpoint)
+            .request(Method::POST, endpoint)
             .json(&payload)
             .send()
             .await
@@ -201,8 +229,7 @@ impl ApiClient {
         let upload_info_json = serde_json::to_string(&nar_info)?;
 
         let mut req = self
-            .client
-            .put(endpoint)
+            .request(Method::PUT, endpoint)
             .header(USER_AGENT, HeaderValue::from_str(ATTIC_USER_AGENT)?);
 
         if force_preamble || upload_info_json.len() >= NAR_INFO_PREAMBLE_THRESHOLD {
@@ -253,16 +280,8 @@ impl fmt::Display for StructuredApiError {
     }
 }
 
-fn build_http_client(token: Option<&str>) -> HttpClient {
-    let mut headers = HeaderMap::new();
-
-    if let Some(token) = token {
-        let auth_header = HeaderValue::from_str(&format!("bearer {}", token)).unwrap();
-        headers.insert(AUTHORIZATION, auth_header);
-    }
-
-    reqwest::Client::builder()
-        .default_headers(headers)
-        .build()
-        .unwrap()
+fn make_bearer(t: &str) -> Result<HeaderValue> {
+    let mut bearer = HeaderValue::from_str(&format!("bearer {t}"))?;
+    bearer.set_sensitive(true);
+    Ok(bearer)
 }
