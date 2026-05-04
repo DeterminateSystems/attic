@@ -5,7 +5,7 @@ use anyhow::{anyhow, Result};
 use clap::Parser;
 use indicatif::MultiProgress;
 use notify::{EventKind, RecursiveMode, Watcher};
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::mpsc;
 
 use crate::api::ApiClient;
 use crate::cache::CacheRef;
@@ -73,8 +73,6 @@ pub async fn run(opts: Opts) -> Result<()> {
     };
 
     let mp = MultiProgress::new();
-
-    let api = Arc::new(RwLock::new(api));
     let session = Pusher::new(
         store.clone(),
         api,
