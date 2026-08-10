@@ -13,6 +13,10 @@
 , nix-packages
 , boost
 , libarchive
+, acl
+, bzip2
+, llhttp
+, xz
 
 , extraPackageArgs ? {}
 }:
@@ -46,27 +50,53 @@ let
     nix-packages.nix-main-static
     nix-packages.nix-expr-static
     boost
+    libarchive
+    (lib.getLib acl)
+    (lib.getLib bzip2)
+    llhttp
+    xz
   ];
 
   rustTargetSpec = stdenv.hostPlatform.rust.rustcTargetSpec;
-  rustTargetSpecEnv = lib.toUpper (builtins.replaceStrings [ "-" ] [ "_" ] rustTargetSpec);
+  rustTargetSpecEnvNormal = builtins.replaceStrings [ "-" ] [ "_" ] rustTargetSpec;
+  rustTargetSpecEnv = lib.toUpper rustTargetSpecEnvNormal;
 
-  isCross = stdenv.hostPlatform != stdenv.buildPlatform;
+  env = {
+    # The nix libraries are always statically linked, so system-deps
+    # needs to use pkg-config --static to pick up transitive dependencies.
+    SYSTEM_DEPS_LINK = "static";
 
-  crossArgs = lib.optionalAttrs (isCross) {
-    doIncludeCrossToolchainEnv = false;
-    depsBuildBuild = [
-      buildPackages.stdenv.cc
-      lld
-    ];
+    # aws-lc-fips-sys static requirements
+    "AWS_LC_SYS_STATIC_${rustTargetSpecEnvNormal}" = "1";
 
     CARGO_BUILD_TARGET = rustTargetSpec;
     "CARGO_TARGET_${rustTargetSpecEnv}_LINKER" = "${stdenv.cc.targetPrefix}cc";
-    RUSTFLAGS = "-C relocation-model=static -Clink-arg=-fuse-ld=lld";
-    SYSTEM_DEPS_LINK = "static";
+    "CFLAGS" = "-rtlib=compiler-rt --unwindlib=none";
+    RUSTFLAGS = lib.concatStringsSep " " [
+      "-C relocation-model=static"
+      "-Clink-arg=-fuse-ld=lld"
+      "-Clink-arg=-Wl,--wrap=__cxa_throw"
+      "-Clink-arg=-Wl,-u,__wrap___cxa_throw"
+    ];
   };
 
-  extraArgs = crossArgs // extraPackageArgs;
+  depsBuildBuild = [
+    buildPackages.stdenv.cc # for linking crates in the build environment
+    lld
+  ];
+
+  crossArgs = {
+    doIncludeCrossToolchainEnv = false;
+
+    stdenv = p: p.clangStdenv;
+
+    inherit depsBuildBuild;
+  };
+
+  extraArgs =
+    crossArgs
+    // extraPackageArgs
+    // env;
 
   cargoArtifacts = craneLib.buildDepsOnly ({
     pname = "attic";
